@@ -1,0 +1,106 @@
+"""Turn kensas_10min.csv into a model-ready table: model_table.csv
+
+Run from the repo root:   python src/prepare_features.py
+Needs: pandas, numpy, scikit-learn. Reads data/processed/kensas_10min.csv and data/raw/Noon Reports
+
+What it does
+  1. Loads the 10-minute sensor table and the daily noon reports
+  2. Fixes the known sensor faults
+       - drafts: sensors read 0 all year -> displacement, drafts and trim from the noon reports
+       - power: torquemeter wrong from 10 Jul 2024 -> virtual power from fuel flow and rpm (model 1)
+       - speed: speed log drifts -> speed through water = GPS speed minus current along the heading
+  3. Builds physics-based features (log power, log speed, wind and wave components)
+  4. Adds filter flags (steady sailing, calm weather) and split helpers (reference period, week)
+"""
+import glob
+import os
+
+import numpy as np
+import pandas as pd
+from sklearn.linear_model import LinearRegression
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import PolynomialFeatures
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+NOON = os.path.join(HERE, "..", "data", "raw", "Noon Reports")
+PROCESSED = os.path.join(HERE, "..", "data", "processed")
+KN = 1.94384  # m/s -> knots
+TORQUE_OK_UNTIL = "2024-07-10"   # torquemeter trusted before this date
+REFERENCE_END = "2024-06-24"     # reference period for the baseline: 1 Jan to 23 Jun 2024
+
+# ---------------------------------------------------------------- 1. load
+m = pd.read_csv(os.path.join(PROCESSED, "kensas_10min.csv"), index_col="time", parse_dates=True)
+weather = [c for c in m.columns if c.startswith(("s_", "mb_"))]
+m[weather] = m[weather].interpolate(limit=6, limit_area="inside")  # hourly -> 10 min, gaps up to 1 h
+
+noon = pd.concat([pd.read_csv(f) for f in sorted(glob.glob(os.path.join(NOON, "*.csv")))])
+noon["date"] = pd.to_datetime(noon["Date"], format="%d/%m/%Y")
+noon = noon.set_index("date")
+day = m.index.tz_localize(None).normalize()
+
+out = pd.DataFrame(index=m.index)
+
+# ---------------------------------------------------------------- 2a. loading condition (noon reports)
+out["disp_t"] = noon["Displacement"].reindex(day).values
+out["draft_fwd"] = noon["Fwd Draft"].reindex(day).values
+out["draft_aft"] = noon["Aft Draft"].reindex(day).values
+out["trim_m"] = out.draft_aft - out.draft_fwd             # + = by the stern
+out["laden"] = out.disp_t > 55000
+
+# ---------------------------------------------------------------- 2b. speed through water from GPS
+h = np.deg2rad(m.heading_deg)
+cur_s = (m.s_cur_e * np.sin(h) + m.s_cur_n * np.cos(h)) * KN
+cur_mb = (m.mb_cur_e * np.sin(h) + m.mb_cur_n * np.cos(h)) * KN
+out["current_along_kn"] = pd.concat([cur_s, cur_mb], axis=1).mean(axis=1)  # + = current pushing the ship
+out["sog_kn"] = m.sog_kn
+out["stw_log_kn"] = m.stw_kn
+out["stw_gps_kn"] = m.sog_kn - out.current_along_kn                      # use this as speed
+out["log_bias_kn"] = out.stw_log_kn - out.stw_gps_kn                      # sensor check
+
+# ---------------------------------------------------------------- 2c. power: measured, virtual, and the one to use
+out["shaft_rpm"] = m.shaft_rpm.abs()
+out["fo_kgh"] = m.fo_kgh
+out["power_meas_kw"] = m.shaft_kw.abs()
+fit_rows = ((out.shaft_rpm > 50) & (m.fo_kgh > 200) & (m.shaft_rpm_sd < 1)
+            & (out.power_meas_kw > 800) & (m.index < TORQUE_OK_UNTIL))
+virtual = make_pipeline(PolynomialFeatures(2), LinearRegression())
+virtual.fit(m.loc[fit_rows, ["fo_kgh"]].assign(rpm=out.shaft_rpm[fit_rows]), out.power_meas_kw[fit_rows])
+can_predict = m.fo_kgh.notna() & out.shaft_rpm.notna() & (m.fo_kgh > 200) & (out.shaft_rpm > 50)
+out["power_virtual_kw"] = np.nan
+out.loc[can_predict, "power_virtual_kw"] = virtual.predict(
+    m.loc[can_predict, ["fo_kgh"]].assign(rpm=out.shaft_rpm[can_predict]))
+out["torque_ratio"] = out.power_meas_kw / out.power_virtual_kw            # sensor check, ~1.0 when healthy
+out["power_kw"] = np.where(m.index < TORQUE_OK_UNTIL, out.power_meas_kw, out.power_virtual_kw)
+
+# ---------------------------------------------------------------- 3. physics features
+out["log_power"] = np.log(out.power_kw.where(out.power_kw > 0))
+out["log_speed"] = np.log(out.stw_gps_kn.where(out.stw_gps_kn > 0))
+out["log_disp"] = np.log(out.disp_t)
+rel = np.deg2rad(m.wind_rel_deg)
+out["wind_rel_kn"] = m.wind_rel_kn
+out["wind_head_kn"] = m.wind_rel_kn * np.cos(rel)                          # + = head wind
+out["wind_side_kn"] = (m.wind_rel_kn * np.sin(rel)).abs()
+out["wind_head2"] = out.wind_head_kn * out.wind_rel_kn                     # ~ wind resistance, keeps the sign
+out["wind_true_kn"] = np.hypot(m.s_wind_e, m.s_wind_n) * KN
+out["hs_m"] = m.s_hs.fillna(m.mb_hs)                                       # significant wave height
+wave_rel = np.deg2rad((m.s_wave_deg - m.heading_deg) % 360)
+out["wave_head_m"] = out.hs_m * np.cos(wave_rel)                            # + = head seas
+out["hs2"] = out.hs_m ** 2
+out["wave_period_s"] = m.s_tp
+out["sea_temp_c"] = m.s_sst            # NOT for the baseline model (acts as a clock), OK for the growth model
+out["depth_m"] = m.depth_m             # echosounder, sparse
+
+# ---------------------------------------------------------------- 4. flags and split helpers
+out["steady"] = ((out.stw_gps_kn > 8) & (out.shaft_rpm > 55) & (m.shaft_rpm_sd < 1) & (m.stw_kn_sd < 0.3)
+                 & (m.sog_kn_sd < 0.3) & (m.heading_deg_sd < 2) & (m.turn_rate.abs() < 0.5)
+                 & out.disp_t.notna() & (out.power_kw > 800))
+out["calm"] = (out.wind_true_kn < 16) & (out.hs_m < 2.0)
+out["reference_period"] = out.index < REFERENCE_END
+out["torque_trusted"] = out.index < TORQUE_OK_UNTIL
+out["week"] = out.index.strftime("%G-W%V")                                 # group for week-by-week validation
+out["month"] = out.index.strftime("%Y-%m")
+
+out.round(4).to_csv(os.path.join(PROCESSED, "model_table.csv"))
+s = out[out.steady]
+print(f"model_table.csv: {len(out):,} rows, {out.shape[1]} columns")
+print(f"steady sailing rows: {len(s):,} (reference period: {s.reference_period.sum():,}, calm: {s.calm.sum():,})")

@@ -1,0 +1,14 @@
+# Data: never commit raw data or script outputs
+data/raw/*
+!data/raw/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+*.csv
+!reference/*.csv
+
+# Python / Jupyter
+__pycache__/
+.ipynb_checkpoints/
+
+# macOS
+.DS_Store

@@ -1,0 +1,49 @@
+# TDT4259 – Kensas hull and propeller cleaning
+
+Group project, TDT4259 Applied Data Science (NTNU). One year of sensor data (Jan 2024 to Jan 2025) from the bulk carrier *Kensas* (SINTEF / HullPIC Real Vessel Data Challenge). Goal: decide when the hull and propeller should be cleaned.
+
+## Setup
+
+1. Use the Anaconda base environment, then run:
+   ```bash
+   pip install -r requirements.txt
+   ```
+2. Copy the contents of the Drive `Dataset` folder into `data/raw/`. That's the 13 monthly CSVs, `Metrics registration.xlsx` and the `Noon Reports` folder. `data/raw` and `data/processed` are gitignored, so never commit data.
+
+## Run order
+
+From the repo root:
+
+```bash
+python src/make_10min.py
+python src/prepare_features.py
+python src/models/speed_baseline.py
+python src/models/lightgbm_benchmark.py
+```
+
+## Scripts
+
+| Script | What it does |
+|---|---|
+| `src/make_10min.py` | Raw monthly files (long format, 15 s) → `data/processed/kensas_10min.csv`: 10-minute means, one column per signal |
+| `src/prepare_features.py` | 10-min table + noon reports → `data/processed/model_table.csv`: fixes sensor faults, adds physics features, `steady`, `calm`, `reference_period` and `week` columns |
+| `src/models/speed_baseline.py` | **Main model.** Log-linear speed model fitted on the reference period, validated by week. Writes daily speed loss to `data/processed/speed_loss_daily.csv` |
+| `src/models/lightgbm_benchmark.py` | Benchmark B2. A LightGBM power model with a good MAPE that goes flat outside the trained speed range (compared with the towing-tank curve) |
+| `src/models/trend_changepoints.py` | Stub. Rolling median plus CUSUM change points (ruptures) on daily speed loss |
+| `src/models/fouling_growth.py` | Stub. OLS growth rate of speed loss, July to December |
+| `reference/towing_with_psv.csv` | Clean-hull speed-power tables from the towing tank report (ballast, design, scantling) |
+
+Put personal exploration in `notebooks/`, named with your initials (e.g. `mp_eda.ipynb`).
+
+## Sensor faults
+
+- **Drafts:** the draft sensors read 0 all year, so drafts, trim and displacement come from the noon reports.
+- **Power:** from 10 Jul 2024 the torquemeter under-reads by 16 to 34%. After that date we use virtual power, fitted from fuel flow and rpm.
+- **Speed:** the speed log over-reads by about 1.2 kn in Aug and Sep. Speed is GPS speed minus the current along the heading.
+
+## Team rules
+
+- The reference period is 1 Jan to 23 Jun 2024.
+- Split by week only (GroupKFold on `week`), never randomly.
+- Never use sea temperature, month or any date as a baseline input, because they absorb the fouling trend.
+- Never fill missing power or fuel values.
