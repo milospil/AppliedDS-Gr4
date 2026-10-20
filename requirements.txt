@@ -5,5 +5,6 @@ lightgbm
 statsmodels
 matplotlib
 openpyxl
+pyarrow
 ruptures
 jupyter
