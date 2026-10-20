@@ -15,57 +15,21 @@ Output:
 """
 import glob
 import os
-
 import pandas as pd
+import duckdb as db
+import polars as pl
+from .cfg import DROP, STD_COLS, COUNT_COLS, SHORT
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DATASET = os.path.join(HERE, "..", "data", "raw")
 PROCESSED = os.path.join(HERE, "..", "data", "processed")
+DB_PATH = os.path.join(HERE, "..", "data", "raw", "sintef_ocean.db")
 
-# Short column names for every signal (quantity name | source name, as in Metrics registration.xlsx)
-SHORT = {
-    "Main Engine Scavenging Air Pressure | Transducer Pressure": "me_scav_bar",
-    "Main Engine Turbocharger Rotational Speed | Transducer RPM": "me_tc_rpm_tr",
-    "Main Engine Fuel Load % | Transducer Fuel Load": "me_load_pct",
-    "Vessel External Conditions Wind Relative Speed | Instrument Anemometer": "wind_rel_kn",
-    "Vessel External Conditions Wind Relative Angle | Instrument Anemometer": "wind_rel_deg",
-    "Vessel Propeller Shaft Rotational Speed | Instrument Torquemeter": "shaft_rpm",
-    "Vessel Propeller Shaft Revolutions | Instrument Torquemeter": "shaft_revs",
-    "Vessel Propeller Shaft Torque | Instrument Torquemeter": "shaft_torque_nm",  # values are really kNm
-    "Vessel Propeller Shaft Mechanical Power | Instrument Torquemeter": "shaft_kw",
-    "Vessel Propeller Shaft Mechanical Energy | Instrument Torquemeter": "shaft_kwh",
-    "Vessel Propeller Shaft Thrust Force | Instrument Torquemeter": "thrust_kn",
-    "Main Engine Fuel Oil Inlet Mass Flow | Instrument Torquemeter": "fo_kgh",
-    "Main Engine Turbocharger Rotational Speed | Instrument RPM Indicator": "me_tc_rpm",  # no data in the files
-    "Vessel Hull Relative To Transducer Water Depth | Instrument Echosounder": "depth_m",
-    "Vessel Hull Heading True Angle | Instrument Gyrocompass": "heading_deg",
-    "Vessel Hull Heading Turn Rate | Instrument Gyrocompass": "turn_rate",
-    "Vessel Hull Over Ground Speed | Instrument GPS 1": "sog_kn",
-    "Vessel Hull Through Water Longitudinal Speed | Instrument Speedlog": "stw_kn",
-    "Vessel Hull Fore Draft | Control Alarm Monitoring System": "draft_fwd",
-    "Vessel Hull Aft Draft | Control Alarm Monitoring System": "draft_aft",
-    "Vessel Hull MidP Draft | Control Alarm Monitoring System": "draft_midp",
-    "Vessel Hull MidS Draft | Control Alarm Monitoring System": "draft_mids",
-    "Main Engine Rotational Speed | Control Alarm Monitoring System": "me_rpm",
-    "Vessel External Conditions Wind True Speed | Provider MB": "mb_wind_kn",
-    "Vessel External Conditions Wind True Angle | Provider MB": "mb_wind_deg",
-    "Vessel External Conditions Wave Significant Height | Provider MB": "mb_hs",
-    "Vessel External Conditions Swell Significant Height | Provider MB": "mb_swell",
-    "Vessel External Conditions Eastward Sea Water Velocity | Provider MB": "mb_cur_e",
-    "Vessel External Conditions Northward Sea Water Velocity | Provider MB": "mb_cur_n",
-    "Vessel External Conditions Wave True Angle | Provider S": "s_wave_deg",
-    "Vessel External Conditions Sea Water Temperature | Provider S": "s_sst",
-    "Vessel External Conditions Wave Period | Provider S": "s_tp",
-    "Vessel External Conditions Wave Significant Height | Provider S": "s_hs",
-    "Vessel External Conditions Eastward Sea Water Velocity | Provider S": "s_cur_e",
-    "Vessel External Conditions Northward Sea Water Velocity | Provider S": "s_cur_n",
-    "Vessel External Conditions Eastward Wind Velocity | Provider S": "s_wind_e",
-    "Vessel External Conditions Northward Wind Velocity | Provider S": "s_wind_n",
-}
-STD_COLS = ["stw_kn", "sog_kn", "shaft_rpm", "shaft_kw", "heading_deg", "turn_rate"]  # -> _sd columns
-COUNT_COLS = ["stw_kn", "shaft_kw"]                                                    # -> _n columns
-DROP = ["draft_fwd", "draft_aft", "draft_midp", "draft_mids"]                          # always 0
+for ext in ["parquet", "json", "spatial", "excel"]:
+    db.sql(f"INSTALL {ext}; LOAD {ext};")
 
+def csv_files(path2dir):
+    return [os.path.join(dirname, f) for dirname, _,files in os.walk(path2dir) for f in files if f.endswith('.csv')]
 
 def signal_names():
     """signal id -> short name, using Metrics registration.xlsx."""
@@ -85,6 +49,65 @@ def read_raw(path):
         return d[["ts", "q", "v"]]
     return pd.read_csv(path, header=None, names=["ts", "q", "v"], dtype={"ts": str, "q": str, "v": "float64"})
 
+
+def create_database(path2metric_registration, path2data_dir, db_path):
+    # Create a DuckDB database connection
+    conn = db.connect(database=db_path)  
+    col_names = {k.split(" | ")[0]: v for k, v in SHORT.items()}  
+    conn.execute("SET TimeZone = 'UTC'")
+    conn.execute(f"""CREATE TABLE metrics_registration AS SELECT * FROM read_xlsx('{path2metric_registration}')""")
+    conn.execute("""ALTER TABLE metrics_registration
+                ADD COLUMN short_name VARCHAR""")
+
+    # Populate it using the dictionary
+    conn.executemany(
+        """
+        UPDATE metrics_registration
+        SET short_name = ?
+        WHERE quantity_name = ?
+        """,
+        [(label, key) for key, label in col_names.items()],)
+    
+    # 
+    data_csvs = csv_files(f"{path2data_dir}/timeseriesdata/")
+    conn.execute("""
+    CREATE TABLE metrics_raw AS 
+    SELECT 
+        CAST(csv.column0 AS TIMESTAMPTZ) AS timestamp,
+        csv.column1 AS qid_mapping,
+        dict.quantity_name,
+        dict.short_name,
+        csv.column2 AS value
+    FROM read_csv($1::VARCHAR[], header=False) csv
+    LEFT JOIN metrics_registration dict ON csv.column1 = dict.qid_mapping;
+    """, [data_csvs])
+
+    #Noon reports
+    noon_csvs = csv_files(f"{path2data_dir}/Noon Reports/")
+    conn.execute("""
+    CREATE TABLE noon_reports AS 
+    SELECT *
+    FROM read_csv($1::VARCHAR[]) csv
+    """, [noon_csvs])
+
+    #Jan 25 
+    jan25 = csv_files(f"{path2data_dir}/Jan25/")
+    conn.execute("""
+    CREATE TABLE jan25 AS 
+    SELECT *
+    FROM read_csv($1::VARCHAR[]) csv
+    """, [jan25])
+    print("Database Tables:", [row[0] for row in conn.execute("SHOW TABLES;").fetchall()])
+    conn.close()
+
+def long_to_wide(db_path):
+    conn = db.connect(database=db_path)
+    metrics_long = conn.execute("SELECT timestamp, short_name, value FROM metrics_raw").pl()
+    print("Long DataFrame shape:", metrics_long.shape)
+    wide_df = metrics_long.pivot(index="timestamp", on="short_name", values="value")
+    print("Wide DataFrame shape:", wide_df.shape)
+    conn.close()
+    return wide_df
 
 def ten_minutes(d, names):
     """Long format -> wide 10-minute table for one file."""
@@ -124,4 +147,6 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    #main()
+    #create_database(os.path.join(DATASET, "Metrics registration.xlsx"), DATASET, os.path.join(DATASET, "sintef_ocean.db"))
+    wide_df = long_to_wide(os.path.join(DATASET, "sintef_ocean.db"))

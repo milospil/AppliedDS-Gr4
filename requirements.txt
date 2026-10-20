@@ -7,3 +7,6 @@ matplotlib
 openpyxl
 ruptures
 jupyter
+duckdb
+polars
+
