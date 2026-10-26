@@ -18,15 +18,10 @@ import os
 import pandas as pd
 import duckdb as db
 import polars as pl
-from .cfg import DROP, STD_COLS, COUNT_COLS, SHORT
+from .cfg import DROP, STD_COLS, COUNT_COLS, SHORT, HERE, DATASET, PROCESSED, DB_PATH, load_extensions
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-DATASET = os.path.join(HERE, "..", "data", "raw")
-PROCESSED = os.path.join(HERE, "..", "data", "processed")
-DB_PATH = os.path.join(HERE, "..", "data", "raw", "sintef_ocean.db")
 
-for ext in ["parquet", "json", "spatial", "excel"]:
-    db.sql(f"INSTALL {ext}; LOAD {ext};")
+load_extensions()  # load DuckDB extensions for reading Excel, Parquet, etc.
 
 def csv_files(path2dir):
     return [os.path.join(dirname, f) for dirname, _,files in os.walk(path2dir) for f in files if f.endswith('.csv')]

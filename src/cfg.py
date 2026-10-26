@@ -1,3 +1,5 @@
+import os
+import duckdb as db
 
 # Short column names for every signal (quantity name | source name, as in Metrics registration.xlsx)
 SHORT = {
@@ -42,3 +44,13 @@ SHORT = {
 STD_COLS = ["stw_kn", "sog_kn", "shaft_rpm", "shaft_kw", "heading_deg", "turn_rate"]  # -> _sd columns
 COUNT_COLS = ["stw_kn", "shaft_kw"]                                                    # -> _n columns
 DROP = ["draft_fwd", "draft_aft", "draft_midp", "draft_mids"]                          # always 0
+
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+DATASET = os.path.join(HERE, "..", "data", "raw")
+PROCESSED = os.path.join(HERE, "..", "data", "processed")
+DB_PATH = os.path.join(HERE, "..", "data", "raw", "sintef_ocean.db")
+
+def load_extensions():
+    for ext in ["parquet", "json", "spatial", "excel"]:
+        db.sql(f"INSTALL {ext}; LOAD {ext};")
