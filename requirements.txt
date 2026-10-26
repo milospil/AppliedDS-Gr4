@@ -8,3 +8,6 @@ openpyxl
 pyarrow
 ruptures
 jupyter
+duckdb
+polars
+
