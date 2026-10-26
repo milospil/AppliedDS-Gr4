@@ -103,10 +103,13 @@ def create_database(path2metric_registration, path2data_dir, db_path):
 def long_to_wide(db_path):
     conn = db.connect(database=db_path)
     metrics_long = conn.execute("SELECT timestamp, short_name, value FROM metrics_raw").pl()
-    print("Long DataFrame shape:", metrics_long.shape)
-    wide_df = metrics_long.pivot(index="timestamp", on="short_name", values="value")
-    print("Wide DataFrame shape:", wide_df.shape)
     conn.close()
+    print("Long DataFrame shape:", metrics_long.shape)
+    
+    #there are some duplicate timestamps, so we need to aggregate them first
+    wide_df = metrics_long.pivot(index="timestamp", on="short_name", values="value", aggregate_function="mean",).sort("timestamp") 
+    
+    print("Wide DataFrame shape:", wide_df.shape)
     return wide_df
 
 def ten_minutes(d, names):
