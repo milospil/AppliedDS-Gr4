@@ -8,6 +8,6 @@ openpyxl
 pyarrow
 ruptures
 jupyter
-duckdb
+duckdb<2  # 2.0 removed .pl(), used by cfg.get_* and make_10min
 polars
 connectorx
