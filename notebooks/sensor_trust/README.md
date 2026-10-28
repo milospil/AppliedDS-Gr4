@@ -8,11 +8,19 @@
 
 | Notebook | Signals | Owner | Status |
 |---|---|---|---|
-| `01_propulsion.ipynb` | shaft power, rpm, torque, thrust, fuel, engine, counters | mp | first version |
-| `02_speed_navigation.ipynb` | STW, SOG, currents, heading, turn rate, depth | | planned |
-| `03_weather.ipynb` | anemometer, Provider S, Provider MB | | planned |
-| `04_noon_reports.ipynb` | noon reports internally and against sensors | | planned |
+| `01_propulsion.ipynb` | shaft power, rpm, torque, thrust, fuel, engine, counters | mp | done |
+| `01b_torquemeter_overview.ipynb` | torquemeter through the year against operating mode; dropout evidence | mp | done |
+| `02_speed_navigation.ipynb` | STW, SOG, currents, heading, turn rate, depth; Jan 2025 at sea | mp | done |
+| `03_weather.ipynb` | anemometer, Provider S, Provider MB | mp | done |
+| `04_noon_reports.ipynb` | noon reports internally and against sensors; fuel meter vs air side | mp | done |
 | `05_summary.ipynb` | trust table for all signals × months, all findings | | planned |
+
+**Main results so far** (details and evidence in `docs/data_quality_log.md`):
+- Torquemeter power reads ~23 % low from July (DQ-02), drops out to 0 at sea for 656 h (DQ-14), sign fault 10–16 Jul (DQ-03).
+- Fuel meter reads ~16 % high from mid-October (DQ-18); noon fuel is not an independent check (DQ-29).
+- Speed log reads +1.2 kn high 29 Jul – 16 Oct, proven to be the sensor, not a current (DQ-05).
+- Reliable all year: engine rpm, GPS speed, scavenge pressure and turbocharger speed (air side), noon displacement.
+- Jan 2025 (blind month): only speed and weather remain while sailing (DQ-07).
 
 Shared code is in `src/trust.py`, so every notebook loads data and defines port, anchor and sailing the same way. Limits are in `physical_limits.md`.
 
