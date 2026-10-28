@@ -1,3 +1,7 @@
+import os
+import duckdb as db
+import polars as pl
+
 
 # Short column names for every signal (quantity name | source name, as in Metrics registration.xlsx)
 SHORT = {
@@ -42,3 +46,50 @@ SHORT = {
 STD_COLS = ["stw_kn", "sog_kn", "shaft_rpm", "shaft_kw", "heading_deg", "turn_rate"]  # -> _sd columns
 COUNT_COLS = ["stw_kn", "shaft_kw"]                                                    # -> _n columns
 DROP = ["draft_fwd", "draft_aft", "draft_midp", "draft_mids"]                          # always 0
+
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+DATASET = os.path.join(HERE, "..", "data", "raw")
+PROCESSED = os.path.join(HERE, "..", "data", "processed")
+DB_PATH = os.path.join(HERE, "..", "data", "raw", "sintef_ocean.db")
+PLOTS_DIR = os.path.join(HERE, "..", "plots4report")
+
+
+
+
+
+
+def load_extensions():
+    for ext in ["parquet", "json", "spatial", "excel"]:
+        db.sql(f"INSTALL {ext}; LOAD {ext};")
+
+def get_metrics_raw_long(DB_PATH : str) -> pl.DataFrame:
+    conn = db.connect(database=DB_PATH)
+    metrics_raw_long = conn.execute("SELECT timestamp, short_name, value FROM metrics_raw").pl()
+    conn.close()
+    return metrics_raw_long
+
+def get_noon_reports(DB_PATH : str) -> pl.DataFrame:
+    conn = db.connect(database=DB_PATH)
+    noon_reports = conn.execute("SELECT * FROM noon_reports").pl()
+    conn.close()
+    return noon_reports
+
+def get_jan25_reports(DB_PATH : str) -> pl.DataFrame:
+    conn = db.connect(database=DB_PATH)
+    jan25 = conn.execute("SELECT * FROM jan25").pl()
+    conn.close()
+    return jan25
+
+def get_metrics_reg(DB_PATH : str) -> pl.DataFrame:
+    conn = db.connect(database=DB_PATH)
+    metrics_reg = conn.execute("SELECT * FROM metrics_registration").pl()
+    conn.close()
+    return metrics_reg
+
+
+def get_metrics_wide(DB_PATH : str) -> pl.DataFrame:
+    conn = db.connect(database=DB_PATH)
+    metrics_wide = conn.execute("SELECT * FROM metrics_wide").pl()
+    conn.close()
+    return metrics_wide

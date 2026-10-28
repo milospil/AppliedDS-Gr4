@@ -99,7 +99,6 @@ out["reference_period"] = out.index < REFERENCE_END
 out["torque_trusted"] = out.index < TORQUE_OK_UNTIL
 out["week"] = out.index.strftime("%G-W%V")                                 # group for week-by-week validation
 out["month"] = out.index.strftime("%Y-%m")
-
 out.round(4).to_csv(os.path.join(PROCESSED, "model_table.csv"))
 s = out[out.steady]
 print(f"model_table.csv: {len(out):,} rows, {out.shape[1]} columns")
