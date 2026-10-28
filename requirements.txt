@@ -10,4 +10,4 @@ ruptures
 jupyter
 duckdb
 polars
-
+connectorx

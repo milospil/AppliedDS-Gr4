@@ -7,7 +7,6 @@ CSV Files were saved in database, this script reads table from database, cleans 
 import os
 import duckdb as db
 import polars as pl
-from .cfg import DROP, STD_COLS, COUNT_COLS, SHORT
 from .cfg import DROP, STD_COLS, COUNT_COLS, SHORT, HERE, DATASET, PROCESSED, DB_PATH, load_extensions
 
 load_extensions()  # load DuckDB extensions for reading Excel, Parquet, etc.

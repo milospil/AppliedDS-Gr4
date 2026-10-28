@@ -55,56 +55,44 @@ def create_database(path2metric_registration, path2data_dir, db_path):
                 ADD COLUMN short_name VARCHAR""")
 
     # Populate it using the dictionary
-    conn.executemany(
-        """
-        UPDATE metrics_registration
-        SET short_name = ?
-        WHERE quantity_name = ?
-        """,
-        [(label, key) for key, label in col_names.items()],)
+    conn.executemany("""UPDATE metrics_registration
+                        SET short_name = ?
+                        WHERE quantity_name = ?""",[(label, key) for key, label in col_names.items()],)
     
     # 
     data_csvs = csv_files(f"{path2data_dir}/timeseriesdata/")
-    conn.execute("""
-    CREATE TABLE metrics_raw AS 
-    SELECT 
-        CAST(csv.column0 AS TIMESTAMPTZ) AS timestamp,
-        csv.column1 AS qid_mapping,
-        dict.quantity_name,
-        dict.short_name,
-        csv.column2 AS value
-    FROM read_csv($1::VARCHAR[], header=False) csv
-    LEFT JOIN metrics_registration dict ON csv.column1 = dict.qid_mapping;
-    """, [data_csvs])
+    conn.execute("""CREATE TABLE metrics_raw AS 
+                    SELECT 
+                        CAST(csv.column0 AS TIMESTAMPTZ) AS timestamp,
+                        csv.column1 AS qid_mapping,
+                        dict.quantity_name,
+                        dict.short_name,
+                        csv.column2 AS value
+                    FROM read_csv($1::VARCHAR[], header=False) csv
+                    LEFT JOIN metrics_registration dict ON csv.column1 = dict.qid_mapping;
+                    """, [data_csvs])
 
     #Noon reports
     noon_csvs = csv_files(f"{path2data_dir}/Noon Reports/")
-    conn.execute("""
-    CREATE TABLE noon_reports AS 
-    SELECT *
-    FROM read_csv($1::VARCHAR[]) csv
-    """, [noon_csvs])
+    conn.execute("""CREATE TABLE noon_reports AS 
+    SELECT * FROM read_csv($1::VARCHAR[]) csv""", [noon_csvs])
 
     #Jan 25 
     jan25 = csv_files(f"{path2data_dir}/Jan25/")
-    conn.execute("""
-    CREATE TABLE jan25 AS 
-    SELECT *
-    FROM read_csv($1::VARCHAR[]) csv
-    """, [jan25])
+    conn.execute("""CREATE TABLE jan25 AS 
+            SELECT * FROM read_csv($1::VARCHAR[]) csv""", [jan25])
     print("Database Tables:", [row[0] for row in conn.execute("SHOW TABLES;").fetchall()])
     conn.close()
 
 def long_to_wide(db_path):
     conn = db.connect(database=db_path)
     metrics_long = conn.execute("SELECT timestamp, short_name, value FROM metrics_raw").pl()
-    conn.close()
     print("Long DataFrame shape:", metrics_long.shape)
-    
     #there are some duplicate timestamps, so we need to aggregate them first
     wide_df = metrics_long.pivot(index="timestamp", on="short_name", values="value", aggregate_function="mean",).sort("timestamp") 
-    
     print("Wide DataFrame shape:", wide_df.shape)
+    conn.execute("CREATE TABLE metrics_wide AS SELECT * FROM metrics_wide")
+    conn.close()
     return wide_df
 
 def ten_minutes(d, names):
