@@ -49,6 +49,7 @@ def detect_jumps(DB_PATH, create_table = False, save_csv = False) -> dict:
     return timestamp_dict
 
 def plot_jumps(timestamp_dict):
+    os.makedirs(os.path.join(PLOTS_DIR, "time_vector"), exist_ok=True)
     for k,v in timestamp_dict.items():
         fig,ax = plt.subplots(figsize = (12,6))
         ax.grid(True)
@@ -60,7 +61,7 @@ def plot_jumps(timestamp_dict):
         ax.legend(loc="upper right", fontsize=12, edgecolor="black", fancybox=False, framealpha=1)
         ax.set_ylabel(r"$1^{st}$ order difference [seconds]", family="serif", fontsize=14)
         ax.set_title(k)
-        plt.savefig(os.path.join(PLOTS_DIR, f"{k.replace(" ","_").lower()}.png"))
+        plt.savefig(os.path.join(PLOTS_DIR,  "time_vector", f"{k.replace(" ","_").lower()}.png"))
         #plt.show()
 
 #------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------#
