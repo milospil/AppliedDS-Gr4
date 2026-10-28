@@ -76,3 +76,14 @@ The first rows are **candidates from the first-pass scripts (19 Oct)**. They hav
 - DQ-14 dropouts are now NaN in `power_meas_kw`, and engine rpm replaces shaft rpm there. This adds 1,769 steady rows in the reference period (mostly June).
 - Noon-report fuel only partly supports DQ-18: meter ÷ noon fuel is 1.24 in Nov, but 1.08 in Dec and 0.99 in Oct.
 - Limitation: the pressure–power relation can drift with turbocharger fouling or air temperature. The flat torquemeter ratio within each period suggests it doesn't here.
+
+**Ballast excess in Oct–Nov (28 Oct, `plots4report/ballast_oct_dec_check.png`).** After the power fix, ballast still reads +31 % (Oct) and +23 % (Nov) while laden Dec reads +3 %. Checked against the reference ballast rows (clean, steady):
+
+- Not the power estimate: in the reference period, scavenge-based power matches the torquemeter to +0.0 % in the 3.0–3.5 MW ballast band where Oct–Nov sails (2,075 rows).
+- Not loading: Oct–Nov ballast is slightly lighter than the reference (34.8k vs 35.9k t), which would make the ship faster.
+- At equal power the ship is slower: 10.51 vs 11.25 kn at 3.0–3.5 MW (−0.74 kn, −6.6 %, about +20 % power at P ∝ V³). GPS speed alone shows the same drop, so it is not the current model. Panel A.
+- Compare at equal power, not equal speed. The ship runs at almost fixed power settings and speed scatters ±1.5 kn around them, so binning by speed flattens any change (panel B). For the same reason, adding speed to the baseline correction overfits (fitted P ∝ V¹, and laden Aug–Dec drops to −20 %).
+- The propeller law does not confirm it: power at the same engine rpm is unchanged (about +1 %, panel C), while 20 % more resistance should make the propeller run heavier.
+- Plausible cause: noon reports show about 11 port days at 27 °C between 25 Sep and 10 Oct (inside the DQ-08 gap), just before the high readings.
+- Weak points: the only reference ballast at this power is one April voyage, so a route or current difference can't be ruled out. Laden Dec (59k t) has no laden reference near its displacement and rests on the towing-curve interpolation; a cleaning during the Nov stops (196 h) would also explain it, but only the cleaning-events file can tell.
+- For the report: quote Oct–Nov ballast as about 0.7 kn speed loss (about 20 % power) against the April voyage, not confirmed by the propeller law, rather than the 23–31 % monthly medians.
