@@ -7,7 +7,8 @@ What it does
   1. Loads the 10-minute sensor table and the daily noon reports
   2. Fixes the known sensor faults
        - drafts: sensors read 0 all year -> displacement, drafts and trim from the noon reports
-       - power: torquemeter wrong from 10 Jul 2024 -> virtual power from fuel flow and rpm (model 1)
+       - power: torquemeter wrong from 10 Jul 2024 and when it drops out to 0 -> virtual power from
+         scavenge air pressure and engine rpm (fuel flow is not used: the fuel meter drifts from Oct, DQ-18)
        - speed: speed log drifts -> speed through water = GPS speed minus current along the heading
   3. Builds physics-based features (log power, log speed, wind and wave components)
   4. Adds filter flags (steady sailing, calm weather) and split helpers (reference period, week)
@@ -59,18 +60,40 @@ out["log_bias_kn"] = out.stw_log_kn - out.stw_gps_kn                      # sens
 
 # ---------------------------------------------------------------- 2c. power: measured, virtual, and the one to use
 out["shaft_rpm"] = m.shaft_rpm.abs()
+out["me_rpm"] = m.me_rpm.abs()
+out["scav_bar"] = m.me_scav_bar
 out["fo_kgh"] = m.fo_kgh
 out["power_meas_kw"] = m.shaft_kw.abs()
-fit_rows = ((out.shaft_rpm > 50) & (m.fo_kgh > 200) & (m.shaft_rpm_sd < 1)
-            & (out.power_meas_kw > 800) & (m.index < TORQUE_OK_UNTIL))
-virtual = make_pipeline(PolynomialFeatures(2), LinearRegression())
-virtual.fit(m.loc[fit_rows, ["fo_kgh"]].assign(rpm=out.shaft_rpm[fit_rows]), out.power_meas_kw[fit_rows])
-can_predict = m.fo_kgh.notna() & out.shaft_rpm.notna() & (m.fo_kgh > 200) & (out.shaft_rpm > 50)
-out["power_virtual_kw"] = np.nan
-out.loc[can_predict, "power_virtual_kw"] = virtual.predict(
-    m.loc[can_predict, ["fo_kgh"]].assign(rpm=out.shaft_rpm[can_predict]))
+# DQ-14: torquemeter writes 0 while the engine turns -> a dropout, not real power. Engine rpm stands in for shaft rpm
+dropout = (out.power_meas_kw < 50) & (out.me_rpm > 50)
+out.loc[dropout, "power_meas_kw"] = np.nan
+out.loc[dropout, "shaft_rpm"] = out.me_rpm[dropout]
+fit_rows = (out.me_rpm > 50) & (m.shaft_rpm_sd < 1) & (out.power_meas_kw > 800) & (m.index < TORQUE_OK_UNTIL)
+
+
+def virtual_power(cols, ok):
+    """power from engine-side signals, fitted where the torquemeter is trusted. Prints the May-Jul holdout MAPE."""
+    X = out[cols]
+    mdl = make_pipeline(PolynomialFeatures(2), LinearRegression())
+    train, test = fit_rows & (m.index < "2024-05-01"), fit_rows & (m.index >= "2024-05-01")
+    mdl.fit(X[train], out.power_meas_kw[train])
+    mape = 100 * (mdl.predict(X[test]) / out.power_meas_kw[test] - 1).abs().mean()
+    print(f"virtual power from {' + '.join(cols)}: holdout MAPE (May - 9 Jul) {mape:.1f}%")
+    mdl.fit(X[fit_rows], out.power_meas_kw[fit_rows])
+    p = pd.Series(np.nan, index=out.index)
+    ok = ok & X.notna().all(axis=1)
+    p[ok] = mdl.predict(X[ok])
+    return p
+
+
+# DQ-02 / DQ-18: torquemeter reads low from 10 Jul, and the fuel meter reads high from mid Oct, so the virtual
+# power uses scavenge air pressure + engine rpm (neither sensor involved). The fuel-based version is kept for comparison
+out["power_virtual_kw"] = virtual_power(["scav_bar", "me_rpm"], (out.me_rpm > 50) & (out.scav_bar > 0.1))
+out["power_virtual_fuel_kw"] = virtual_power(["fo_kgh", "me_rpm"], (out.me_rpm > 50) & (out.fo_kgh > 200))
 out["torque_ratio"] = out.power_meas_kw / out.power_virtual_kw            # sensor check, ~1.0 when healthy
-out["power_kw"] = np.where(m.index < TORQUE_OK_UNTIL, out.power_meas_kw, out.power_virtual_kw)
+use_meas = (m.index < TORQUE_OK_UNTIL) & ~dropout
+out["power_kw"] = np.where(use_meas, out.power_meas_kw, out.power_virtual_kw)
+out["power_source"] = np.where(use_meas, "torquemeter", "scavenge")
 
 # ---------------------------------------------------------------- 3. physics features
 out["log_power"] = np.log(out.power_kw.where(out.power_kw > 0))

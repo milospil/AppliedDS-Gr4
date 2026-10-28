@@ -19,6 +19,7 @@ python src/make_10min.py
 python src/prepare_features.py
 python src/models/speed_baseline.py
 python src/models/lightgbm_benchmark.py
+python src/models/submission.py
 ```
 
 ## Scripts
@@ -29,6 +30,7 @@ python src/models/lightgbm_benchmark.py
 | `src/prepare_features.py` | 10-min table + noon reports → `data/processed/model_table.csv`: fixes sensor faults, adds physics features, `steady`, `calm`, `reference_period` and `week` columns |
 | `src/models/speed_baseline.py` | **Main model.** Log-linear speed model fitted on the reference period, validated by week. Writes daily speed loss to `data/processed/speed_loss_daily.csv` |
 | `src/models/lightgbm_benchmark.py` | Benchmark B2. A LightGBM power model with a good MAPE that goes flat outside the trained speed range (compared with the towing-tank curve) |
+| `src/models/submission.py` | Fills the challenge templates: clean scantling baseline and the 10-min timeseries (expected power, fouling, speed loss, uncertainty, flags) in `data/processed/submission/`, plus `plots4report/fouling_trend.png` |
 | `src/models/trend_changepoints.py` | Stub. Rolling median plus CUSUM change points (ruptures) on daily speed loss |
 | `src/models/fouling_growth.py` | Stub. OLS growth rate of speed loss, July to December |
 | `reference/towing_with_psv.csv` | Clean-hull speed-power tables from the towing tank report (ballast, design, scantling) |
@@ -38,7 +40,7 @@ Put personal exploration in `notebooks/`, named with your initials (e.g. `mp_eda
 ## Sensor faults
 
 - **Drafts:** the draft sensors read 0 all year, so drafts, trim and displacement come from the noon reports.
-- **Power:** from 10 Jul 2024 the torquemeter under-reads by 16 to 34%. After that date we use virtual power, fitted from fuel flow and rpm.
+- **Power:** from 10 Jul 2024 the torquemeter under-reads by about 18%, and by about 23% from mid Oct. After 10 Jul, and when the torquemeter drops out to 0, we use virtual power from scavenge air pressure and engine rpm (1.0% holdout error). Fuel flow is not used: the fuel meter reads high from mid Oct (DQ-18).
 - **Speed:** the speed log over-reads by about 1.2 kn in Aug and Sep. Speed is GPS speed minus the current along the heading.
 
 ## Team rules
