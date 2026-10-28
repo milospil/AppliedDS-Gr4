@@ -16,6 +16,11 @@ Method
      measured power minus measured speed, using the local exponent b of the clean curve
   4. Uncertainty = robust spread of the residuals in the reference period, plus the error of the
      virtual power (scavenge air pressure + engine rpm) where the torquemeter is not used
+  Speed is `speed_kn` from prepare_features.py (speed log, offset removed on 29 Jul - 16 Oct, DQ-05).
+  Jan 2025 (blind month) has no power, torque or engine rpm at sea (DQ-07), so its rows carry speed only:
+  no expected power, fouling or speed loss can be computed there. The 'power source' column says 'none'.
+  The wind terms use the anemometer as measured; its mast-height bias (DQ-27) is constant all year, so the
+  reference-period fit absorbs it.
 """
 import os
 import numpy as np
@@ -67,7 +72,7 @@ pd.DataFrame({
 
 # ---- 2. reference-period correction on top of the clean curve
 m = pd.read_csv(os.path.join(PROCESSED, "model_table.csv"), index_col="time", parse_dates=True)
-v, p, disp = m.stw_gps_kn, m.power_kw, m.disp_t
+v, p, disp = m.speed_kn, m.power_kw, m.disp_t
 usable = (v > 5) & (p > 500) & disp.notna()
 m["p_clean"] = np.nan
 m.loc[usable, "p_clean"] = np.exp(interp_disp(fit_p, v[usable], disp[usable]))
@@ -128,7 +133,7 @@ out = pd.DataFrame({
     "outlier": m.outlier,
     # the template's free columns AAA / BBB / XXX
     "steady": m.steady,
-    "torque trusted": m.power_source == "torquemeter",
+    "power source": np.where(p.notna(), m.power_source, "none"),   # torquemeter / scavenge / none (e.g. Jan 2025)
     "laden": m.laden,
 })
 out.to_csv(os.path.join(OUT, "Kensas_Model1_Timeseries.csv"), index=False)
@@ -138,6 +143,9 @@ c = m[m.clean]
 print("reference fit on %d rows, robust residual sd %.1f%%" % (train.sum(), 100 * sd_ref))
 print("correction coefficients:", dict(zip(F, corr.coef_.round(4))), "intercept %.3f" % corr.intercept_)
 print("rows: %d total, %d with expected power, %d clean" % (len(m), ok.sum(), m.clean.sum()))
+blind = m.index >= pd.Timestamp("2025-01-01", tz=m.index.tz)
+print("Jan 2025: %d rows, %d moving above 5 kn, %d with expected power (no power or engine rpm at sea, DQ-07)"
+      % (blind.sum(), (blind & (v > 5)).sum(), (blind & ok).sum()))
 mon = c.groupby([c.index.strftime("%Y-%m"), "laden"]).agg(
     fouling_pct=("fouling_pct", "median"), speed_loss_kn=("speed_loss_kn", "median"), n=("fouling_pct", "size"))
 print(mon[mon.n >= 30].round(2).to_string())

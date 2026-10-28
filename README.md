@@ -41,7 +41,8 @@ Put personal exploration in `notebooks/`, named with your initials (e.g. `mp_eda
 
 - **Drafts:** the draft sensors read 0 all year, so drafts, trim and displacement come from the noon reports.
 - **Power:** from 10 Jul 2024 the torquemeter under-reads by about 18%, and by about 23% from mid Oct. After 10 Jul, and when the torquemeter drops out to 0, we use virtual power from scavenge air pressure and engine rpm (1.0% holdout error). Fuel flow is not used: the fuel meter reads high from mid Oct (DQ-18).
-- **Speed:** the speed log over-reads by about 1.2 kn in Aug and Sep. Speed is GPS speed minus the current along the heading.
+- **Speed:** the speed log reads about 0.73 kn too high from 29 Jul to 16 Oct (DQ-05). Speed (`speed_kn`) is the speed log with that offset removed; GPS speed minus the modelled current is only a fallback, because the weather providers' currents explain too little (DQ-19).
+- **Weather:** Provider S placeholder rows and Provider MB all-zero currents are set to missing (DQ-06, DQ-26).
 
 ## Team rules
 
