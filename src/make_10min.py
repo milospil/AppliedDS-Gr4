@@ -2,6 +2,9 @@
 
 Run from the repo root:   python src/make_10min.py
 Needs: pandas, openpyxl (both come with Anaconda). Takes a few minutes and about 1 GB of memory.
+Optional:                 python src/make_10min.py --duckdb
+  also builds the DuckDB database data/raw/sintef_ocean.db (tables metrics_registration, metrics_raw,
+  noon_reports, jan25, metrics_wide) used by cfg.get_* and the data_cleaning scripts.
 
 Input (in data/raw):
   1.csv ... 12.csv          Jan to Dec 2024. No header. Columns: ISO timestamp, signal id, value
@@ -15,13 +18,12 @@ Output:
 """
 import glob
 import os
+import sys
 import pandas as pd
 import duckdb as db
 import polars as pl
-from .cfg import DROP, STD_COLS, COUNT_COLS, SHORT, HERE, DATASET, PROCESSED, DB_PATH, load_extensions
+from cfg import DROP, STD_COLS, COUNT_COLS, SHORT, HERE, DATASET, PROCESSED, DB_PATH, load_extensions
 
-
-load_extensions()  # load DuckDB extensions for reading Excel, Parquet, etc.
 
 def csv_files(path2dir):
     return [os.path.join(dirname, f) for dirname, _,files in os.walk(path2dir) for f in files if f.endswith('.csv')]
@@ -45,9 +47,20 @@ def read_raw(path):
     return pd.read_csv(path, header=None, names=["ts", "q", "v"], dtype={"ts": str, "q": str, "v": "float64"})
 
 
+def raw_layout(path2data_dir):
+    """monthly csvs and Jan25 csvs: timeseriesdata/ and Jan25/ subfolders if present, else the flat data/raw layout."""
+    sub = os.path.join(path2data_dir, "timeseriesdata")
+    if os.path.isdir(sub):
+        return csv_files(sub), csv_files(os.path.join(path2data_dir, "Jan25"))
+    monthly = sorted(glob.glob(os.path.join(path2data_dir, "[0-9]*.csv")))
+    return monthly, sorted(glob.glob(os.path.join(path2data_dir, "Jan25*.csv")))
+
+
 def create_database(path2metric_registration, path2data_dir, db_path):
-    # Create a DuckDB database connection
-    conn = db.connect(database=db_path)  
+    load_extensions()  # read_xlsx needs the excel extension
+    if os.path.exists(db_path):
+        os.remove(db_path)  # rebuild from scratch, CREATE TABLE fails on an existing database
+    conn = db.connect(database=db_path)
     col_names = {k.split(" | ")[0]: v for k, v in SHORT.items()}  
     conn.execute("SET TimeZone = 'UTC'")
     conn.execute(f"""CREATE TABLE metrics_registration AS SELECT * FROM read_xlsx('{path2metric_registration}')""")
@@ -60,7 +73,7 @@ def create_database(path2metric_registration, path2data_dir, db_path):
                         WHERE quantity_name = ?""",[(label, key) for key, label in col_names.items()],)
     
     # 
-    data_csvs = csv_files(f"{path2data_dir}/timeseriesdata/")
+    data_csvs, jan25 = raw_layout(path2data_dir)
     conn.execute("""CREATE TABLE metrics_raw AS 
                     SELECT 
                         CAST(csv.column0 AS TIMESTAMPTZ) AS timestamp,
@@ -78,7 +91,6 @@ def create_database(path2metric_registration, path2data_dir, db_path):
     SELECT * FROM read_csv($1::VARCHAR[]) csv""", [noon_csvs])
 
     #Jan 25 
-    jan25 = csv_files(f"{path2data_dir}/Jan25/")
     conn.execute("""CREATE TABLE jan25 AS 
             SELECT * FROM read_csv($1::VARCHAR[]) csv""", [jan25])
     print("Database Tables:", [row[0] for row in conn.execute("SHOW TABLES;").fetchall()])
@@ -91,7 +103,7 @@ def long_to_wide(db_path):
     #there are some duplicate timestamps, so we need to aggregate them first
     wide_df = metrics_long.pivot(index="timestamp", on="short_name", values="value", aggregate_function="mean",).sort("timestamp") 
     print("Wide DataFrame shape:", wide_df.shape)
-    conn.execute("CREATE TABLE metrics_wide AS SELECT * FROM metrics_wide")
+    conn.execute("CREATE OR REPLACE TABLE metrics_wide AS SELECT * FROM wide_df")
     conn.close()
     return wide_df
 
@@ -133,6 +145,7 @@ def main():
 
 
 if __name__ == "__main__":
-    #main()
-    #create_database(os.path.join(DATASET, "Metrics registration.xlsx"), DATASET, os.path.join(DATASET, "sintef_ocean.db"))
-    wide_df = long_to_wide(os.path.join(DATASET, "sintef_ocean.db"))
+    main()
+    if "--duckdb" in sys.argv:
+        create_database(os.path.join(DATASET, "Metrics registration.xlsx"), DATASET, DB_PATH)
+        long_to_wide(DB_PATH)

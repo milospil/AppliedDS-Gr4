@@ -4,12 +4,9 @@ Clear weather data provided in the noon reports
 CSV Files were saved in database, this script reads table from database, cleans it and save it back to database as a new table.
 
 '''
-import os
 import duckdb as db
 import polars as pl
-from .cfg import DROP, STD_COLS, COUNT_COLS, SHORT, HERE, DATASET, PROCESSED, DB_PATH, load_extensions
-
-load_extensions()  # load DuckDB extensions for reading Excel, Parquet, etc.
+from cfg import DB_PATH
 
 column_mapping = {
     "Date": "date",
