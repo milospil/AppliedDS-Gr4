@@ -20,7 +20,7 @@ import os
 
 import pandas as pd
 
-from make_10min import DATASET, SHORT
+from cfg import DATASET, SHORT
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(HERE, "..", "data", "processed", "raw_long")
