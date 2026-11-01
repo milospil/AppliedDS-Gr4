@@ -35,6 +35,7 @@ python src/correlation_drivers.py
 | `src/models/speed_baseline.py` | **Main model.** Log-linear speed model fitted on the reference period, validated by week. Writes daily speed loss to `data/processed/speed_loss_daily.csv` |
 | `src/models/lightgbm_benchmark.py` | Benchmark B2. A LightGBM power model with a good MAPE that goes flat outside the trained speed range (compared with the towing-tank curve) |
 | `src/models/submission.py` | Fills the challenge templates: clean scantling baseline and the 10-min timeseries (expected power, fouling, speed loss, uncertainty, flags) in `data/processed/submission/`, plus `plots4report/fouling_trend.png`. Also a VTI-style clean-hull index, not in the template: `data/processed/vti_daily.csv`, `plots4report/vti_trend.png` |
+| `src/models/vti_check.py` | Prints checks of the VTI-style index: by speed and power, speed log vs GPS speed, and weekly values |
 | `src/models/trend_changepoints.py` | Stub. Rolling median plus CUSUM change points (ruptures) on daily speed loss |
 | `src/models/fouling_growth.py` | Stub. OLS growth rate of speed loss, July to December |
 | `reference/towing_with_psv.csv` | Clean-hull speed-power tables from the towing tank report (ballast, design, scantling) |
