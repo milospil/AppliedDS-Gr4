@@ -1,12 +1,13 @@
-"""Correlation matrix of the main signals, for the report.
+"""Sensor check: do the main signals agree before and after the torquemeter fault (10 Jul)?
 
 Run from the repo root:   python src/correlation_matrix.py
-Reads data/processed/model_table.csv, writes plots4report/correlation_matrix.png and
-data/processed/correlation_reference.csv
+Reads data/processed/model_table.csv, writes plots4report/sensor_correlation_periods.png and
+data/processed/correlation_reference.csv. For what drives power, see src/correlation_drivers.py.
 
 Spearman (rank) correlation on steady sailing rows, because the relations are curved (P ~ V^3).
 Two periods side by side: while the torquemeter is trusted, and after it. Virtual power is left out: it is
 built from scavenge pressure and rpm, so its correlation with them says nothing new.
+The two panels cannot be compared directly: power covers a much wider range after July, which pushes correlations up.
 """
 import os
 
@@ -50,6 +51,6 @@ for ax, (title, part) in zip(axes, periods):
     print(c.round(2).to_string())
     if part is periods[0][1]:
         c.round(3).to_csv(os.path.join(PROCESSED, "correlation_reference.csv"))
-fig.suptitle("Spearman correlation on steady sailing: blue = negative, red = positive", x=0.01, ha="left", color=INK, fontsize=12)
+fig.suptitle("Spearman correlation on steady sailing: blue = negative, red = positive. Power range differs, so don't compare panels directly", x=0.01, ha="left", color=INK, fontsize=12)
 fig.tight_layout()
-fig.savefig(os.path.join(PLOTS, "correlation_matrix.png"), dpi=150)
+fig.savefig(os.path.join(PLOTS, "sensor_correlation_periods.png"), dpi=150)
