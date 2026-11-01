@@ -117,8 +117,13 @@ The first rows are **candidates from the first-pass scripts (19 Oct)**. They hav
 
 **Fouling vs time under 3 kn (2 Nov, `notebooks/mp_fouling_vs_idle_time.ipynb`, `plots4report/fouling_vs_idle_time.png`).** Tests the idea from Gupta et al. (2022) that fouling grows with cumulative time under 3 kn. The ship spent 1,894 h under 3 kn in 2024, 23 % of the rows with GPS speed.
 - Weekly swings: the weekly indicator goes from −15 to +57 % (laden, Aug–Sep) and alternates between about 10 and 30 % (ballast, Oct–Nov). Real fouling can't change that fast, so something else moves the indicator too. The cause is not known yet. Treat the monthly Aug–Sep values as a rough level.
-- Slip: laden slip rises in August and is back to about 9 % by mid-September, with no known cleaning in between.
+- Slip: laden slip rises to about 17 % in August and is back to about 9–12 % in the second half of September, with no known cleaning in between.
 - Prediction on unseen weeks (out-of-sample R², all of 2024): loading only −0.08, + idle time 0.10, + date 0.10. Idle time never beats the date, and the two are nearly the same line (correlation 0.97).
 - Before and after the 4 long stays, same loading: fouling and slip both rise in 2 of 6 comparisons. Only 23 Jun – 10 Jul laden is clear (+24.9 fouling points, +4.4 slip points).
 - For the report: write idle fouling as a hypothesis from the literature that this data only partly supports, and give the monthly values with their weekly spread.
 - Limits: few events, windows far apart in time, water temperature missing for most of the June–July stay, and no cleaning dates to reset the count.
+
+**Full rerun after the cleaning (2 Nov).** All seven README steps rerun from the raw files. The model table, daily speed loss and submission timeseries came out identical.
+- Speed baseline: speed MAPE 2.30 % (laden 2.18 %, ballast 2.60 %) on 10,824 rows.
+- LightGBM benchmark: power MAPE 5.12 % (laden 4.28 %, ballast 7.03 %) on 11,049 rows. It still fails below its trained speeds: laden at 9 kn it gives 4,012 kW against 1,386 kW for the towing-tank curve.
+- These two MAPEs can't be compared yet: one is in speed and the other in power, and the rows differ, although `lightgbm_benchmark.py` says they are the same.
