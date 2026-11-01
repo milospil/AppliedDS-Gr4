@@ -20,13 +20,15 @@ python src/prepare_features.py
 python src/models/speed_baseline.py
 python src/models/lightgbm_benchmark.py
 python src/models/submission.py
+python src/correlation_matrix.py
 ```
 
 ## Scripts
 
 | Script | What it does |
 |---|---|
-| `src/make_10min.py` | Raw monthly files (long format, 15 s) → `data/processed/kensas_10min.csv`: 10-minute means, one column per signal |
+| `src/make_10min.py` | Raw monthly files (long format, 15 s) → `data/processed/kensas_10min.csv`: removes bad readings (`src/data_cleaning/readings.py`), then 10-minute means, one column per signal (circular mean for angles) |
+| `src/correlation_matrix.py` | Spearman correlation of the main signals on steady sailing → `plots4report/correlation_matrix.png` |
 | `src/prepare_features.py` | 10-min table + noon reports → `data/processed/model_table.csv`: fixes sensor faults, adds physics features, `steady`, `calm`, `reference_period` and `week` columns |
 | `src/models/speed_baseline.py` | **Main model.** Log-linear speed model fitted on the reference period, validated by week. Writes daily speed loss to `data/processed/speed_loss_daily.csv` |
 | `src/models/lightgbm_benchmark.py` | Benchmark B2. A LightGBM power model with a good MAPE that goes flat outside the trained speed range (compared with the towing-tank curve) |
@@ -42,6 +44,8 @@ Put personal exploration in `notebooks/`, named with your initials (e.g. `mp_eda
 - **Drafts:** the draft sensors read 0 all year, so drafts, trim and displacement come from the noon reports.
 - **Power:** from 10 Jul 2024 the torquemeter under-reads by about 18–24% (depending on the reference signal), and by about 23% from mid Oct (DQ-02). After 10 Jul, and when the torquemeter drops out to 0, we use virtual power from scavenge air pressure and engine rpm (1.0% holdout error). Fuel flow is not used: the fuel meter reads high from mid Oct (DQ-18).
 - **Speed:** the speed log reads about 0.73 kn too high from 29 Jul to 16 Oct (DQ-05). Speed (`speed_kn`) is the speed log with that offset removed; GPS speed minus the modelled current is only a fallback, because the weather providers' currents explain too little (DQ-19).
+- **Wind angle:** averaged with a circular mean, because a plain mean turns head wind into tail wind (DQ-30).
+- **Bad readings:** physical limits (DQ-15) and SOG stuck for 30 min or more while moving (DQ-22) are removed before averaging.
 - **Weather:** Provider S placeholder rows and Provider MB all-zero currents are set to missing (DQ-06, DQ-26).
 
 ## Team rules

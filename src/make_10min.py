@@ -12,17 +12,23 @@ Input (in data/raw):
   Metrics registration.xlsx  Maps each signal id to a name, source and unit
 
 Output:
-  data/processed/kensas_10min.csv  one row per 10 minutes (UTC), one column per signal (mean of the raw readings),
-                    plus _sd (standard deviation inside the 10 minutes) and _n (number of readings)
-                    for a few signals used to find steady sailing. Draft sensors are dropped (always 0).
+  data/processed/kensas_10min.csv  one row per 10 minutes (UTC), one column per signal (mean of the raw readings,
+                    circular mean for angles), plus _sd (standard deviation inside the 10 minutes) and _n (number of
+                    readings) for a few signals used to find steady sailing, and ds_share (share of the block that is
+                    steady in rpm and heading). Draft sensors are dropped (always 0).
+                    Bad readings are removed first: see data_cleaning/readings.py.
 """
 import glob
 import os
 import sys
+import numpy as np
 import pandas as pd
 import duckdb as db
 import polars as pl
 from cfg import DROP, STD_COLS, COUNT_COLS, SHORT, HERE, DATASET, PROCESSED, DB_PATH, load_extensions
+from data_cleaning.readings import bad_readings, steady_share
+
+ANGLE_COLS = ["heading_deg", "wind_rel_deg", "mb_wind_deg", "s_wave_deg"]
 
 
 def csv_files(path2dir):
@@ -108,13 +114,25 @@ def long_to_wide(db_path):
     return wide_df
 
 def ten_minutes(d, names):
-    """Long format -> wide 10-minute table for one file."""
+    """Long format -> wide 10-minute table for one file, after removing bad readings."""
     d["sig"] = d.q.map(names)
     unknown = d.sig.isna().sum()
     if unknown:
         print(f"  warning: {unknown} rows with an unknown signal id were skipped")
     d = d.dropna(subset=["sig"])
-    d["slot"] = d.ts.str[:15] + "0"          # '2024-01-25T14:52' -> '2024-01-25T14:50'
+    d["t"] = pd.to_datetime(d.ts, format="ISO8601", utc=True).dt.round("15s")   # readings jitter by milliseconds
+
+    grid = d.groupby(["t", "sig"]).v.mean().unstack().asfreq("15s")
+    share = steady_share(grid)
+    bad, count = bad_readings(grid)
+    print(f"  removed readings: {count}")
+    stack = bad.stack()
+    stack = stack[stack].reset_index()
+    stack.columns = ["t", "sig", "bad"]
+    d = d.merge(stack, on=["t", "sig"], how="left")
+    d = d[d.bad.isna()]
+
+    d["slot"] = d.t.dt.floor("10min")
     g = d.groupby(["slot", "sig"]).v
     wide = g.mean().unstack()
     sd = g.std().unstack()
@@ -125,6 +143,19 @@ def ten_minutes(d, names):
     for c in COUNT_COLS:
         if c in n:
             wide[c + "_n"] = n[c]
+    # angles: a plain mean of 359 and 1 degrees gives 180 (DQ-30). Keep sin and cos until the files are joined
+    a = d[d.sig.isin(ANGLE_COLS)]
+    rad = np.deg2rad(a.v)
+    sin = a.assign(v=np.sin(rad)).groupby(["slot", "sig"]).v.mean().unstack()
+    cos = a.assign(v=np.cos(rad)).groupby(["slot", "sig"]).v.mean().unstack()
+    for c in sin.columns:
+        wide = wide.drop(columns=c)
+        wide[c + "_sin"], wide[c + "_cos"] = sin[c], cos[c]
+        if c in STD_COLS:
+            r = np.hypot(sin[c], cos[c]).clip(upper=1)
+            wide[c + "_sd"] = np.degrees(np.sqrt(-2 * np.log(r.clip(lower=1e-12))))   # circular standard deviation
+    if share is not None:
+        wide["ds_share"] = share
     return wide
 
 
@@ -136,9 +167,11 @@ def main():
         print("reading", os.path.basename(f), flush=True)
         parts.append(ten_minutes(read_raw(f), names))
     t = pd.concat(parts)
-    t.index = pd.to_datetime(t.index, format="%Y-%m-%dT%H:%M", utc=True)
     t.index.name = "time"
     t = t.groupby(level=0).mean().sort_index()   # a slot that appears in two files (month border) is averaged
+    for c in ANGLE_COLS:
+        if c + "_sin" in t:
+            t[c] = np.degrees(np.arctan2(t.pop(c + "_sin"), t.pop(c + "_cos"))) % 360
     t = t.drop(columns=[c for c in DROP if c in t.columns])
     t.round(4).to_csv(os.path.join(PROCESSED, "kensas_10min.csv"))
     print(f"kensas_10min.csv: {len(t):,} rows, {t.shape[1]} columns, {t.index.min()} to {t.index.max()}")

@@ -6,7 +6,8 @@ Needs: pandas, numpy, scikit-learn. Reads data/processed/kensas_10min.csv and da
 What it does
   1. Loads the 10-minute sensor table and the daily noon reports
   2. Fixes the known sensor faults
-       - drafts: sensors read 0 all year -> displacement, drafts and trim from the noon reports
+       - drafts: sensors read 0 all year -> displacement, drafts and trim from the noon reports, without the
+         days that break the limits or where displacement doesn't match the drafts (DQ-01)
        - power: torquemeter wrong from 10 Jul 2024 and when it drops out to 0 -> virtual power from
          scavenge air pressure and engine rpm (fuel flow is not used: the fuel meter drifts from Oct, DQ-18)
        - weather: Provider S placeholder rows (DQ-06) and Provider MB all-zero currents (DQ-26) -> NaN
@@ -15,7 +16,8 @@ What it does
          GPS speed minus current is kept as stw_gps_kn and used where the speed log is missing
        - waves: Provider S first (it is the only source of wave direction); MB first was tested and fits worse (DQ-28)
   3. Builds physics-based features (log power, log speed, wind and wave components)
-  4. Adds filter flags (steady sailing, calm weather) and split helpers (reference period, week)
+  4. Adds filter flags (steady sailing, calm weather) and split helpers (reference period, week).
+     Steady = low spread inside the block and no trend in rpm and heading (Dalheim & Steen slope test, make_10min.py)
 """
 import glob
 import os
@@ -32,6 +34,8 @@ PROCESSED = os.path.join(HERE, "..", "data", "processed")
 KN = 1.94384  # m/s -> knots
 TORQUE_OK_UNTIL = "2024-07-10"   # torquemeter trusted before this date
 REFERENCE_END = "2024-06-24"     # reference period for the baseline: 1 Jan to 23 Jun 2024
+DRAFT_TO_DISP = [(6.4, 37000), (12.2, 75200), (14.25, 89100)]   # mean draft [m] -> displacement [t], from Particulars
+DS_MIN_SHARE = 0.9               # block counts as steady if this share passes the Dalheim & Steen test
 STW_OFFSET = ("2024-07-29", "2024-10-17", 0.73)  # DQ-05: speed log − SOG is +1.16 kn here vs +0.43 kn laden elsewhere
                                                   # (the period is all laden; ballast elsewhere +0.12 kn)
 
@@ -48,6 +52,14 @@ m[weather] = m[weather].interpolate(limit=6, limit_area="inside")  # hourly -> 1
 noon = pd.concat([pd.read_csv(f) for f in sorted(glob.glob(os.path.join(NOON, "*.csv")))])
 noon["date"] = pd.to_datetime(noon["Date"], format="%d/%m/%Y")
 noon = noon.set_index("date")
+# noon reports: physical limits (physical_limits.md), and days where displacement doesn't match the drafts (DQ-01)
+trim = noon["Aft Draft"] - noon["Fwd Draft"]
+from_draft = np.interp((noon["Fwd Draft"] + noon["Aft Draft"]) / 2, *zip(*DRAFT_TO_DISP))
+bad_noon = (~noon["Displacement"].between(30000, 92000) | ~noon["Fwd Draft"].between(3, 16)
+            | ~noon["Aft Draft"].between(3, 16) | ~trim.between(-2, 7) | ((noon["Displacement"] / from_draft - 1).abs() > 0.10))
+bad_noon &= noon["Displacement"].notna()
+print(f"noon reports: {bad_noon.sum()} of {noon['Displacement'].notna().sum()} days removed by the limits and the draft check")
+noon.loc[bad_noon, ["Displacement", "Fwd Draft", "Aft Draft"]] = np.nan
 day = m.index.tz_localize(None).normalize()
 
 out = pd.DataFrame(index=m.index)
@@ -131,9 +143,10 @@ out["sea_temp_c"] = m.s_sst            # NOT for the baseline model (acts as a c
 out["depth_m"] = m.depth_m             # echosounder, sparse
 
 # ---------------------------------------------------------------- 4. flags and split helpers
-out["steady"] = ((out.speed_kn > 8) & (out.shaft_rpm > 55) & (m.shaft_rpm_sd < 1) & (m.stw_kn_sd < 0.3)
-                 & (m.sog_kn_sd < 0.3) & (m.heading_deg_sd < 2) & (m.turn_rate.abs() < 0.5)
-                 & out.disp_t.notna() & (out.power_kw > 800))
+sailing = (out.speed_kn > 8) & (out.shaft_rpm > 55) & out.disp_t.notna() & (out.power_kw > 800)
+out["steady_spread"] = sailing & (m.shaft_rpm_sd < 1) & (m.stw_kn_sd < 0.3) & (m.sog_kn_sd < 0.3) & (m.heading_deg_sd < 2) & (m.turn_rate.abs() < 0.5)
+out["steady_ds"] = sailing & (m.ds_share >= DS_MIN_SHARE) & (m.turn_rate.abs() < 0.5)
+out["steady"] = out.steady_spread & out.steady_ds   # the test alone fits much worse: it does not look at speed
 out["calm"] = (out.wind_true_kn < 16) & (out.hs_m < 2.0)
 out["reference_period"] = out.index < REFERENCE_END
 out["torque_trusted"] = out.index < TORQUE_OK_UNTIL
