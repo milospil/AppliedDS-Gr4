@@ -5,7 +5,7 @@ Reads data/processed/model_table.csv and reference/towing_with_psv.csv, writes t
   - Kensas_Model1_CleanBaselineScantling.csv: clean-hull speed / power / rpm at scantling draft, 5 to 16 kn
   - Kensas_Model1_Timeseries.csv: one row per 10 minutes with expected power and rpm, fouling, speed loss,
     uncertainty and flags
-and plots4report/fouling_trend.png
+and data/processed/vti_daily.csv, plots4report/fouling_trend.png, plots4report/vti_trend.png
 
 Method
   1. Clean hull = towing-tank curves with PSV (P = a V^b per draft, interpolated on log displacement)
@@ -16,6 +16,9 @@ Method
      measured power minus measured speed, using the local exponent b of the clean curve
   4. Uncertainty = robust spread of the residuals in the reference period, plus the error of the
      virtual power (scavenge air pressure + engine rpm) where the torquemeter is not used
+  5. VTI-style index, a second baseline (idea from DNV-RP-0675): power with the fitted weather terms removed, divided
+     by the clean curve at the same speed and displacement. 1.00 = clean hull. It is not in the template.
+     It uses the same fit as fouling, so it is not an independent check, and sea temperature is not corrected
   Speed is `speed_kn` from prepare_features.py (speed log, offset removed on 29 Jul - 16 Oct, DQ-05).
   Jan 2025 (blind month) has no power, torque or engine rpm at sea (DQ-07), so its rows carry speed only:
   no expected power, fouling or speed loss can be computed there. The 'power source' column says 'none'.
@@ -34,6 +37,7 @@ OUT = os.path.join(PROCESSED, "submission")
 PLOTS = os.path.join(ROOT, "plots4report")
 DISP = {"BALLAST": 36134, "DESIGN": 73346, "SCANTLING": 86941}  # towing tank report
 KEYS = ["BALLAST", "DESIGN", "SCANTLING"]
+WEATHER = ["wind_head2", "wind_side_kn", "hs2", "wave_head_m"]
 VIRTUAL_POWER_ERR = 0.01  # holdout MAPE of the scavenge pressure + rpm power model (prepare_features.py)
 OUTLIER_SD = 3.5
 
@@ -100,6 +104,11 @@ b = pd.Series(np.nan, index=m.index)
 b[ok] = exponent(disp[ok])
 m["speed_loss_kn"] = v * ratio ** (1 / b) - v   # + = slower than the reference hull at this power
 
+# ---- VTI-style index: weather removed, relative to the clean curve
+weather = sum(corr.coef_[F.index(f)] * X[f] for f in WEATHER)
+m["vti"] = p * np.exp(-weather) / m.p_clean
+m["below_tank"] = v < np.interp(np.log(disp), xs, [tow[tow.cond == k].vs.min() for k in KEYS])   # curve extrapolated
+
 # ---- 4. uncertainty and flags
 res = np.log(ratio)
 ref_res = res[train]
@@ -147,8 +156,10 @@ blind = m.index >= pd.Timestamp("2025-01-01", tz=m.index.tz)
 print("Jan 2025: %d rows, %d moving above 5 kn, %d with expected power (no power or engine rpm at sea, DQ-07)"
       % (blind.sum(), (blind & (v > 5)).sum(), (blind & ok).sum()))
 mon = c.groupby([c.index.strftime("%Y-%m"), "laden"]).agg(
-    fouling_pct=("fouling_pct", "median"), speed_loss_kn=("speed_loss_kn", "median"), n=("fouling_pct", "size"))
+    fouling_pct=("fouling_pct", "median"), speed_loss_kn=("speed_loss_kn", "median"), vti=("vti", "median"),
+    n=("fouling_pct", "size"))
 print(mon[mon.n >= 30].round(2).to_string())
+print("VTI on clean rows: %.0f%% below the lowest towing-tank speed (curve extrapolated)" % (100 * c.below_tank.mean()))
 
 # ---- daily trend plot of clean rows
 import matplotlib
@@ -172,3 +183,21 @@ ax.set_title("Kensas: daily fouling indicator, clean steady rows (error bars = 2
 ax.legend(loc="upper left", fontsize=8)
 fig.tight_layout()
 fig.savefig(os.path.join(PLOTS, "fouling_trend.png"), dpi=130)
+
+# ---- daily VTI
+c_vti = c.groupby([c.index.normalize(), "laden"]).agg(vti=("vti", "median"), below_tank=("below_tank", "mean"),
+                                                      n=("vti", "size"))
+c_vti = c_vti[c_vti.n >= 6].round(3)
+c_vti.to_csv(os.path.join(PROCESSED, "vti_daily.csv"))
+fig, ax = plt.subplots(figsize=(11, 4.5))
+for lad, col, lab in [(True, "tab:blue", "laden"), (False, "tab:orange", "ballast")]:
+    d = c_vti.xs(lad, level="laden")
+    ax.plot(d.index, d.vti, "o", ms=3, color=col, alpha=0.7, label=lab)
+ax.axhline(1, color="grey", lw=0.8)
+ax.axvspan(day.index.min(), pd.Timestamp("2024-06-24", tz=day.index.tz), color="green", alpha=0.07, label="reference period")
+ax.axvline(pd.Timestamp("2024-07-10", tz=day.index.tz), color="red", ls="--", lw=1, label="power from scavenge pressure after")
+ax.set_ylabel("VTI-style index (1.00 = clean hull)")
+ax.set_title("Kensas: power relative to the clean hull, weather removed, clean steady rows (daily median)")
+ax.legend(loc="upper left", fontsize=8)
+fig.tight_layout()
+fig.savefig(os.path.join(PLOTS, "vti_trend.png"), dpi=130)

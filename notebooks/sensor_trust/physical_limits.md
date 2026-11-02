@@ -34,7 +34,7 @@ Derived from `Particulars.xlsx` and the towing-tank table (`reference/towing_wit
 | `me_load_pct` | 0–90 | > 100 | > 110 | % of engine max |
 | `stw_kn` | 0–15 | > 16 | > 18 | towing tank ends at 16 kn; max seen 14.9 |
 | `sog_kn` | 0–17 | > 18 | > 21 | STW + up to ~3 kn current |
-| Draft (noon) | 4.4–14.25 m | outside | < 3 or > 14.5 | heavy ballast fwd / scantling |
+| Draft (noon) | 4.4–14.25 m | outside | < 3 or > 16 | heavy ballast fwd / scantling; aft draft reaches 15.5 m when laden and trimmed by the stern |
 | Trim, aft − fwd (noon) | −1 to +5 m | > +5.5 | > +7 or < −2 | heavy ballast 5 m by the stern |
 | Displacement (noon) | 37,000–89,100 t | outside | < 30,000 or > 92,000 | ballast / scantling × 1.025 |
 
