@@ -37,6 +37,7 @@ python src/correlation_drivers.py
 | `src/models/submission.py` | Fills the challenge templates: clean scantling baseline and the 10-min timeseries (expected power, fouling, speed loss, uncertainty, flags) in `data/processed/submission/`, plus `plots4report/fouling_trend.png`. Also a VTI-style clean-hull index, not in the template: `data/processed/vti_daily.csv`, `plots4report/vti_trend.png` |
 | `src/models/vti_check.py` | Prints checks of the VTI-style index: by speed and power, speed log vs GPS speed, and weekly values |
 | `src/models/model_comparison.py` | Prints power error for all models on the same rows: by week and forward in time |
+| `src/models/robustness_checks.py` | Prints the fouling indicator per trip and refitted with a 30-min settling filter, MB waves, light wind only and GPS speed |
 | `src/models/trend_changepoints.py` | Stub. Rolling median plus CUSUM change points (ruptures) on daily speed loss |
 | `src/models/fouling_growth.py` | Stub. OLS growth rate of speed loss, July to December |
 | `reference/towing_with_psv.csv` | Clean-hull speed-power tables from the towing tank report (ballast, design, scantling) |
