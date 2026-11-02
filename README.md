@@ -31,6 +31,7 @@ python src/correlation_drivers.py
 | `src/make_10min.py` | Raw monthly files (long format, 15 s) → `data/processed/kensas_10min.csv`: removes bad readings (`src/data_cleaning/readings.py`), then 10-minute means, one column per signal (circular mean for angles) |
 | `src/correlation_matrix.py` | Sensor check: Spearman correlation of the main signals before and after 10 Jul → `plots4report/sensor_correlation_periods.png` |
 | `src/correlation_drivers.py` | What drives power, reference period: laden vs ballast matrix and partial correlations with week-resampled intervals → `plots4report/correlation_by_loading.png`, `correlation_drivers.png` |
+| `src/sensor_faults_figure.py` | The two main sensor faults (torquemeter ratio, speed log minus GPS) as daily medians → `plots4report/sensor_faults.png` |
 | `src/prepare_features.py` | 10-min table + noon reports → `data/processed/model_table.csv`: fixes sensor faults, adds physics features, `steady`, `calm`, `reference_period` and `week` columns |
 | `src/models/speed_baseline.py` | **Main model.** Log-linear speed model fitted on the reference period, validated by week. Writes daily speed loss to `data/processed/speed_loss_daily.csv` |
 | `src/models/lightgbm_benchmark.py` | Benchmark B2. A LightGBM power model with a good MAPE that goes flat outside the trained speed range (compared with the towing-tank curve) |
