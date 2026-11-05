@@ -117,7 +117,7 @@ def plot_speed_trips(df: pl.DataFrame, trips: pl.DataFrame, DOCK_KN: float, FOUL
     fig, ax = plt.subplots(figsize=(14, 5))
     ax.axhspan(0, DOCK_KN, color="tab:orange", alpha=0.15, label=f"Non Trips (< {DOCK_KN:g} kn)")
     ax.axhspan(0, FOULING_KN, color="tab:red", alpha=0.18,
-            label=f"Fouling growth zone (< {FOULING_KN:g} kn)")
+            label=f"Under (< {FOULING_KN:g} kn)")
     ax.axhline(DOCK_KN, color="tab:orange", ls="--", lw=1)
     ax.axhline(FOULING_KN, color="tab:red", ls="--", lw=1)
 
@@ -138,7 +138,7 @@ def plot_speed_trips(df: pl.DataFrame, trips: pl.DataFrame, DOCK_KN: float, FOUL
     ax.xaxis.set_major_formatter(mdates.ConciseDateFormatter(loc))
     ax.legend(loc="upper left", bbox_to_anchor=(0, -0.08), ncol=6, frameon=False)
     fig.tight_layout()
-    fig.savefig(f"{PLOTS_DIR}/trips_made.png", dpi=150)
+    fig.savefig(f"{PLOTS_DIR}/trips_made.png", dpi=300, bbox_inches="tight")
 
 if __name__ == "__main__":
     df = categorize_speeds(trips_speeds)

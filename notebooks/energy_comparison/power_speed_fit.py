@@ -53,17 +53,40 @@ def _xy(df: pl.DataFrame, SPEED = SPEED) -> tuple[np.ndarray, np.ndarray]:
            .filter(pl.col(SPEED) > MIN_SPEED_KN))
     return d[SPEED].to_numpy(), d[POWER].to_numpy()
 
-def fit_power_law(df: pl.DataFrame, SPEED= SPEED) -> dict:
+def _xyln(df: pl.DataFrame, SPEED = SPEED) -> tuple[np.ndarray, np.ndarray]:
     x, y = _xy(df, SPEED)
+    return np.log(x), np.log(y)
+
+def fit_log_space(df: pl.DataFrame, SPEED = SPEED) -> dict:
+    x, y = _xy(df, SPEED)
+    if len(x) < 3:
+        raise ValueError("Not enough rows with positive speed and power to fit.")
+
+    log_x = np.log(x)
+    log_y = np.log(y)
+    slope, intercept, r_value, p_value, std_err = linregress(log_x, log_y)
+    k = np.exp(intercept)
+    n = slope
+    pred = power_law(x, k, n)
+    res = {
+        "k": k, "n": n, "R2": r_value ** 2,
+        "RMSE": np.sqrt(np.mean((y - pred) ** 2)),
+        "n_points": len(x),
+    }
+    print(f"Points used: {len(x)}")
+    print(f"Fit: P = {k:.4g}·V^{n:.4g}")
+    print(f"R² = {res['R2']:.4f},  RMSE = {res['RMSE']:.1f} kW")
+    return res
+
+def fit_poly(df: pl.DataFrame, SPEED= SPEED) -> dict:
+    x, y = _xy(df, SPEED)
+    lnx, _ = _xyln(df, SPEED)
     if len(x) < 3:
         raise ValueError("Not enough rows with positive speed and power to fit.")
 
     p0 = np.polyfit(x, y, DEGREE)   
     coef, cov = curve_fit(poly, x, y, p0=p0)
-    err = np.sqrt(np.diag(cov)) 
-
-    err = np.sqrt(np.diag(cov))
- 
+    err = np.sqrt(np.diag(cov))   
     pred = poly(x, *coef)
     res = {
         "coef": coef, "cov": cov, "err": err, "n_points": len(x),
@@ -79,6 +102,28 @@ def fit_power_law(df: pl.DataFrame, SPEED= SPEED) -> dict:
     print(f"R² = {res['R2']:.4f},  RMSE = {res['RMSE']:.1f} kW")
     return res
 
+def fit_polyln(df: pl.DataFrame, SPEED= SPEED) -> dict:
+    x, y = _xyln(df, SPEED)
+    if len(x) < 3:
+        raise ValueError("Not enough rows with positive speed and power to fit.")
+
+    p0 = np.polyfit(x, y, DEGREE)   
+    coef, cov = curve_fit(poly, x, y, p0=p0)
+    err = np.sqrt(np.diag(cov))   
+    pred = poly(x, *coef)
+    res = {
+        "coef": coef, "cov": cov, "err": err, "n_points": len(x),
+        "R2": 1 - np.sum((y - pred) ** 2) / np.sum((y - y.mean()) ** 2),
+        "RMSE": np.sqrt(np.mean((y - pred) ** 2)),
+    }
+    names = [f"V^{DEGREE - i}" if DEGREE - i > 1 else ("V" if DEGREE - i == 1 else "const")
+             for i in range(DEGREE + 1)]
+    print(f"Points used: {len(x)}")
+    print(f"Fit: {_equation(coef)}")
+    for nm, c, e in zip(names, coef, err):
+        print(f"  {nm:>6}: {c:12.4g} ± {e:.3g}")
+    print(f"R² = {res['R2']:.4f},  RMSE = {res['RMSE']:.1f} kW")
+    return res
 
 def plot_fit(df: pl.DataFrame, res: dict, out: str = OUT_PNG):
     x, y = _xy(df)
@@ -118,6 +163,7 @@ def plot_fit(df: pl.DataFrame, res: dict, out: str = OUT_PNG):
 
 
 if __name__ == "__main__":
-    data = pl.read_parquet(FILE)
-    result = fit_power_law(data)
-    plot_fit(data, result)
+    #data = pl.read_parquet(FILE)
+    #result = fit_power_law(data)
+    #plot_fit(data, result)
+    pass
